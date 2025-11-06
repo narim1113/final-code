@@ -1,0 +1,138 @@
+function solve_ABDE_symbolic111()
+gamma=pi/7; beta=pi/8; a=1; %gamma의 값이 pi/7인 경우로, 7의 자리에 원하는 패널의 수의 값 m을 대입해주면 된다.
+
+A=[cos(2*gamma);sin(2*gamma);0];
+C=[1;0;0];
+Rz=[cos(2*gamma) -sin(2*gamma) 0; sin(2*gamma) cos(2*gamma) 0; 0 0 1];
+
+L_AB=2*a*sin(gamma)*tan(beta);
+L_AD=2*sin(gamma);
+L_DE=4*a*sin(gamma)*tan(beta);
+L_BE=(2*a*sin(gamma))/cos(beta);
+L_DG=2*sin(gamma);
+
+A0=[0;0;0]; B0=[L_AB;0;0]; D0=[0;L_AD;0];
+d=norm(B0-D0); ap=(L_DE^2-L_BE^2+d^2)/(2*d); h=sqrt(max(L_DE^2-ap^2,0));
+dir=(B0-D0)/d; perp=[-dir(2);dir(1);0];
+E0=D0+ap*dir+h*perp;
+
+% ---- 제약함수 (수치) ----
+g1=@(th,al) g1_num(th,al,A,C,gamma,beta,a,D0,E0,Rz);
+g2=@(th,al) g2_num(th,al,A,C,gamma,beta,a,D0,E0,Rz,L_DG);
+
+% ---- (θ,α) 수치해: g1^2+g2^2 최소화 ----
+obj=@(x) g1(x(1),x(2))^2 + g2(x(1),x(2))^2;
+x0=[1,-2];
+opts=optimset('Display','off','TolX',1e-10,'TolFun',1e-12,'MaxFunEvals',5e4,'MaxIter',5e4);
+x=fminsearch(obj,x0,opts);
+th_val=x(1); al_val=x(2);
+
+% ---- 좌표 계산 ----
+B = B_of(th_val,gamma,beta);
+[Bp,D,E,~]=DE_full(th_val,al_val,A,C,gamma,beta,a,D0,E0,Rz);
+G = G_from(th_val,al_val,A,C,gamma,beta,a,D0,E0,L_DG);
+Ep=Rz*E;
+
+A_num=A; C_num=C; B_num=B; Bp_num=Bp; D_num=D; E_num=E; G_num=G; Ep_num=Ep;
+
+disp("=== θ, α (rad) ==="); fprintf("theta = %.12f, alpha = %.12f\n",th_val,al_val);
+disp("=== 좌표 출력 ===");
+fprintf("A  = [%f, %f, %f]\n",A_num);
+fprintf("B  = [%f, %f, %f]\n",B_num);
+fprintf("B' = [%f, %f, %f]\n",Bp_num);
+fprintf("C  = [%f, %f, %f]\n",C_num);
+fprintf("D  = [%f, %f, %f]\n",D_num);
+fprintf("E  = [%f, %f, %f]\n",E_num);
+fprintf("E' = [%f, %f, %f]\n",Ep_num);
+fprintf("G  = [%f, %f, %f]\n",G_num);
+
+% ---- 3D 시각화 ----
+figure; hold on; grid on; axis equal
+plot3(A_num(1),A_num(2),A_num(3),'ro','MarkerSize',8,'DisplayName','A');
+plot3(B_num(1),B_num(2),B_num(3),'go','MarkerSize',8,'DisplayName','B');
+plot3(Bp_num(1),Bp_num(2),Bp_num(3),'gx','MarkerSize',10,'LineWidth',2,'DisplayName',"B'");
+plot3(C_num(1),C_num(2),C_num(3),'bo','MarkerSize',8,'DisplayName','C');
+plot3(D_num(1),D_num(2),D_num(3),'mo','MarkerSize',8,'DisplayName','D');
+plot3(E_num(1),E_num(2),E_num(3),'ko','MarkerSize',8,'DisplayName','E');
+plot3(Ep_num(1),Ep_num(2),Ep_num(3),'kx','MarkerSize',10,'LineWidth',2,'DisplayName',"E'");
+plot3(G_num(1),G_num(2),G_num(3),'co','MarkerSize',8,'DisplayName','G');
+line([A_num(1) B_num(1)],[A_num(2) B_num(2)],[A_num(3) B_num(3)],'Color','k');
+line([A_num(1) C_num(1)],[A_num(2) C_num(2)],[A_num(3) C_num(3)],'Color','k');
+line([A_num(1) D_num(1)],[A_num(2) D_num(2)],[A_num(3) D_num(3)],'Color','k');
+line([D_num(1) E_num(1)],[D_num(2) E_num(2)],[D_num(3) E_num(3)],'Color','k');
+line([D_num(1) G_num(1)],[D_num(2) G_num(2)],[D_num(3) G_num(3)],'Color','k');
+line([B_num(1) E_num(1)],[B_num(2) E_num(2)],[B_num(3) E_num(3)],'Color','k');
+line([Bp_num(1) D_num(1)],[Bp_num(2) D_num(2)],[Bp_num(3) D_num(3)],'LineStyle','--','Color','r');
+line([Ep_num(1) G_num(1)],[Ep_num(2) G_num(2)],[Ep_num(3) G_num(3)],'LineStyle','--','Color','m');
+line([C_num(1) B_num(1)],[C_num(2) B_num(2)],[C_num(3) B_num(3)],'Color','k');
+text(A_num(1),A_num(2),A_num(3),' A','VerticalAlignment','bottom');
+text(B_num(1),B_num(2),B_num(3),' B','VerticalAlignment','bottom');
+text(Bp_num(1),Bp_num(2),Bp_num(3)," B'",'VerticalAlignment','bottom');
+text(C_num(1),C_num(2),C_num(3),' C','VerticalAlignment','bottom');
+text(D_num(1),D_num(2),D_num(3),' D','VerticalAlignment','bottom');
+text(E_num(1),E_num(2),E_num(3),' E','VerticalAlignment','bottom');
+text(Ep_num(1),Ep_num(2),Ep_num(3)," E'",'VerticalAlignment','bottom');
+text(G_num(1),G_num(2),G_num(3),' G','VerticalAlignment','bottom');
+xlabel('X'); ylabel('Y'); zlabel('Z');
+title('3D View of A, B, B'', C, D, E, E'', G'); legend; view(45,25);
+
+% ---- 등고선(g1=0, g2=0) ----
+theta_vals=linspace(-pi,pi,200); alpha_vals=linspace(-pi,pi,200);
+[Theta,Alpha]=meshgrid(theta_vals,alpha_vals);
+Z1=arrayfun(@(th,al) g1(th,al), Theta, Alpha);
+Z2=arrayfun(@(th,al) g2(th,al), Theta, Alpha);
+figure; hold on; grid on; axis equal
+contour(Theta,Alpha,Z1,[0 0],'LineWidth',2,'LineColor','b');
+contour(Theta,Alpha,Z2,[0 0],'LineWidth',2,'LineColor','r');
+plot(th_val,al_val,'ko','MarkerSize',7,'LineWidth',1.5);
+xlabel('\theta (rad)'); ylabel('\alpha (rad)');
+title('g_1(\theta,\alpha)=0 (blue),  g_2(\theta,\alpha)=0 (red)');
+end
+
+% =================== 서브함수들 ===================
+
+function B=B_of(th,gamma,beta)
+Bx=cos(2*gamma)+2*sin(gamma)*tan(beta)*cos(th)*cos(gamma);
+By=sin(2*gamma)+2*(sin(gamma)^2)*tan(beta)*cos(th);
+Bz=2*sin(gamma)*tan(beta)*sin(th);
+B=[Bx;By;Bz];
+end
+
+function [M,n2,u,n1]=frame_M(A,B,C,al)
+u=unit(B-A);
+n1=unit(cross(C-A,B-A));
+n2=-(cos(al)*n1+sin(al)*cross(u,n1)+(1-cos(al))*dot(u,n1)*u);
+x=u; z=unit(n2); y=cross(z,x);
+M=[x y z];
+end
+
+function [Bp,D,E,n2]=DE_full(th,al,A,C,gamma,beta,a,D0,E0,Rz)
+B=B_of(th,gamma,beta); [M,n2]=frame_M(A,B,C,al);
+D=A+M*D0; E=A+M*E0; Bp=Rz*B;
+end
+
+function G=G_from(th,al,A,C,gamma,beta,a,D0,E0,L_DG)
+B=B_of(th,gamma,beta);
+[M,n2,u,n1]=frame_M(A,B,C,al);
+D=A+M*D0; E=A+M*E0;
+u1=unit(E-D);
+n3=-(cos(al)*n2+sin(al)*cross(u1,n2)+(1-cos(al))*dot(u1,n1)*u1); % 원 코드의 n1 사용 유지
+x1=u1; z1=unit(n3); y1=cross(z1,x1);
+M1=[x1 y1 z1];
+G=D+M1*[0;L_DG;0];
+end
+
+function v=g1_num(th,al,A,C,gamma,beta,a,D0,E0,Rz)
+B=B_of(th,gamma,beta); [~,D,~,~]=DE_full(th,al,A,C,gamma,beta,a,D0,E0,Rz);
+v=sum((Rz*B-D).^2)-(4*sin(gamma)^2*tan(beta)^2);
+end
+
+function v=g2_num(th,al,A,C,gamma,beta,a,D0,E0,Rz,L_DG)
+[~,~,E,~]=DE_full(th,al,A,C,gamma,beta,a,D0,E0,Rz);
+G=G_from(th,al,A,C,gamma,beta,a,D0,E0,L_DG);
+v=sum((Rz*E-G).^2)-(4*a*sin(gamma)*tan(beta))^2;
+end
+
+function e=unit(v)
+n=norm(v); if n==0, e=[0;0;0]; else, e=v/n; end
+end
