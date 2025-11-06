@@ -1,0 +1,186 @@
+function R = fit_paraboloid_and_error(modelType)
+% fit_paraboloid_and_error('rev')     % z = c0 + c1*(x^2+y^2)
+% fit_paraboloid_and_error('general') % z = c0 + c1 x + c2 y + c3 x^2 + c4 x y + c5 y^2
+% 반환: R 구조체(계수, 오차지표, 정점(일반형), 사용점 테이블)
+
+if nargin<1, modelType='general'; end
+modelType = lower(modelType);
+
+%% ===== 0) 고정 파라미터 / 선택 해(네가 고른 값) =====
+TH=1; gamma=pi/7; beta=pi/8; a=1;
+alpha_sel  = -2.791488224143;
+alpha1_sel = -2.844301818364;
+
+%% ===== 1) 섹터0: A,B,C,D,E,G,F (모두 '수치' 연산) =====
+A=[cos(2*gamma); sin(2*gamma); 0];
+Bx=cos(2*gamma)+2*sin(gamma)*tan(beta)*cos(TH)*cos(gamma);
+By=sin(2*gamma)+2*(sin(gamma)^2)*tan(beta)*cos(TH);
+Bz=2*sin(gamma)*tan(beta)*sin(TH);
+B=[Bx; By; Bz];
+C=[1; 0; 0];
+
+% 1차 프레임 (α = alpha_sel)
+u=unit(B-A);
+n1=unit(cross(C-A,B-A));
+n2=-( cos(alpha_sel)*n1 + sin(alpha_sel)*cross(u,n1) + (1-cos(alpha_sel))*dot(u,n1)*u );
+x_dir=u; z_dir=unit(n2); y_dir=cross(z_dir,x_dir);
+M=[x_dir, y_dir, z_dir];
+
+% 로컬 길이
+L_AB=2*a*sin(gamma)*tan(beta);
+L_AD=2*sin(gamma);
+L_DE=4*a*sin(gamma)*tan(beta);
+L_BE=(2*a*sin(gamma))/cos(beta);
+
+% 로컬 기준점
+A0=[0;0;0]; B0=[L_AB;0;0]; D0=[0;L_AD;0];
+d   = norm(B0-D0);
+ap  = (L_DE^2 - L_BE^2 + d^2)/(2*d);
+h   = sqrt(max(L_DE^2 - ap^2, 0));
+dir = (B0-D0)/d;
+prp = [-dir(2); dir(1); 0];
+E0  = D0 + ap*dir + h*prp;
+
+% 글로벌 D,E
+D=A + M*D0;
+E=A + M*E0;
+
+% 2차 프레임 (ED축, α1 = alpha1_sel) 그리고 G
+u1=unit(E-D);
+n3=-( cos(alpha1_sel)*n2 + sin(alpha1_sel)*cross(u1,n2) + (1-cos(alpha1_sel))*dot(u1,n1)*u1 );
+x1=u1; z1=unit(n3); y1=cross(z1,x1);
+M1=[x1, y1, z1];
+
+L_DG=2*sin(gamma); G0=[0; L_DG; 0];
+G=D + M1*G0;
+
+% F (두번째 프레임 로컬에서 E,G 두 원 교점)
+L_GF=6*a*sin(gamma)*tan(beta);
+L_EF=(2*a*sin(gamma))/cos(beta);
+E0F=[L_DE;0;0]; G0F=[0;L_DG;0];
+d1  = norm(E0F-G0F);
+ap1 = (L_GF^2 - L_EF^2 + d1^2)/(2*d1);
+h1  = sqrt(max(L_GF^2 - ap1^2, 0));
+dir1=(E0F-G0F)/d1; prp1=[-dir1(2);dir1(1);0];
+F0  = G0F + ap1*dir1 + h1*prp1;
+F   = D + M1*F0;
+
+%% ===== 1-2) 섹터 회전: z축 기준 2γ씩, 원래로 돌아올 때까지 =====
+Rstep=@(k)[cos(2*k*gamma) -sin(2*k*gamma) 0; ...
+           sin(2*k*gamma)  cos(2*k*gamma) 0; ...
+           0 0 1];
+N=max(1, round(pi/gamma)); % 2π/(2γ)=π/γ
+
+P=[]; names={};
+for k=0:N-1
+    Rk=Rstep(k);
+    Ak=Rk*A; Bk=Rk*B; Ck=Rk*C; Dk=Rk*D; Ek=Rk*E; Gk=Rk*G; Fk=Rk*F;
+    P=[P; Ak.'; Bk.'; Ck.'; Dk.'; Ek.'; Gk.'; Fk.']; %#ok<AGROW>
+    names=[names; ...
+        sprintf('A_%d',k); sprintf('B_%d',k); sprintf('C_%d',k); ...
+        sprintf('D_%d',k); sprintf('E_%d',k); sprintf('G_%d',k); sprintf('F_%d',k)]; %#ok<AGROW>
+end
+X=P(:,1); Y=P(:,2); Z=P(:,3);
+
+%% ===== 2) 모델 행렬 =====
+switch modelType
+    case 'rev'      % z = c0 + c1*(x^2+y^2)
+        Phi=[ones(size(X)), X.^2 + Y.^2];
+        label='z = c0 + c1*(x^2+y^2)';
+    case 'general'  % z = c0 + c1 x + c2 y + c3 x^2 + c4 x y + c5 y^2
+        Phi=[ones(size(X)), X, Y, X.^2, X.*Y, Y.^2];
+        label='z = c0 + c1 x + c2 y + c3 x^2 + c4 x y + c5 y^2';
+    otherwise
+        error('modelType must be ''rev'' or ''general''');
+end
+
+%% ===== 3) 최소제곱 해 및 오차 =====
+c = Phi\Z;
+Zhat = Phi*c;
+r = Z - Zhat;
+
+RMSE = sqrt(mean(r.^2));
+MAE  = mean(abs(r));
+MAXE = max(abs(r));
+SS_res = sum(r.^2);
+SS_tot = sum((Z-mean(Z)).^2);
+R2 = 1 - SS_res/SS_tot;
+
+%% ===== 4) 일반형 정점 =====
+vertex=struct('x0',NaN,'y0',NaN,'z0',NaN);
+if strcmp(modelType,'general')
+    f=c(1); d=c(2); e=c(3); a2=c(4); b2=c(5); c2=c(6);
+    Mv=[2*a2, b2; b2, 2*c2]; rhs=-[d; e];
+    if rcond(Mv)>1e-12
+        xy0=Mv\rhs; x0=xy0(1); y0=xy0(2);
+        z0=f + d*x0 + e*y0 + a2*x0^2 + b2*x0*y0 + c2*y0^2;
+        vertex=struct('x0',x0,'y0',y0,'z0',z0);
+    end
+end
+
+%% ===== 5) 시각화(원하면 사용) =====
+% (a) 잔차 색 산점
+figure('Name','Paraboloid fit - residual scatter','Color','w');
+scatter3(X,Y,Z,36,r,'filled'); colorbar; axis equal vis3d; grid on; view(45,25);
+xlabel('X'); ylabel('Y'); zlabel('Z');
+title(sprintf('Residual-colored points (%s)\nRMSE=%.4g, MAE=%.4g, Max|err|=%.4g, R^2=%.4f', ...
+    label, RMSE, MAE, MAXE, R2));
+
+% (b) 피팅 면 + 점
+nx=60; ny=60;
+xg=linspace(min(X),max(X),nx);
+yg=linspace(min(Y),max(Y),ny);
+[Xg,Yg]=meshgrid(xg,yg);
+switch modelType
+    case 'rev'
+        Phig=[ones(numel(Xg),1), (Xg(:).^2 + Yg(:).^2)];
+    case 'general'
+        Phig=[ones(numel(Xg),1), Xg(:), Yg(:), Xg(:).^2, Xg(:).*Yg(:), Yg(:).^2];
+end
+Zg=reshape(Phig*c,size(Xg));
+
+figure('Name','Paraboloid fit - surface','Color','w');
+mesh(Xg,Yg,Zg,'EdgeAlpha',0.35); hold on;
+plot3(X,Y,Z,'.k','MarkerSize',10);
+axis equal vis3d; grid on; view(45,25);
+xlabel('X'); ylabel('Y'); zlabel('Z');
+if strcmp(modelType,'general') && isfinite(vertex.x0)
+    plot3(vertex.x0,vertex.y0,vertex.z0,'rp','MarkerSize',12,'MarkerFaceColor','r');
+    legend('fitted surface','points','vertex','Location','northeast');
+else
+    legend('fitted surface','points','Location','northeast');
+end
+title(sprintf('Fitted surface (%s)',label));
+
+% (c) 잔차 히스토그램
+figure('Name','Residual histogram','Color','w');
+histogram(r,30); grid on; xlabel('residual z'); ylabel('count');
+title(sprintf('Residuals: RMSE=%.4g, MAE=%.4g, Max|err|=%.4g, R^2=%.4f',RMSE,MAE,MAXE,R2));
+
+%% ===== 6) 결과 반환/출력 =====
+R = struct();
+R.model = modelType;
+R.coeff = c;
+R.vertex = vertex;
+R.RMSE = RMSE; R.MAE = MAE; R.MaxAbsErr = MAXE; R.R2 = R2;
+R.points = table(names, X, Y, Z, Zhat, r);
+
+fprintf('\n=== Paraboloid fit (%s) ===\n', label);
+disp(R)
+
+if strcmp(modelType,'general')
+    fprintf('\nCoefficients (general):\n');
+    fprintf('c0 = %.6f\nc1 = %.6f\nc2 = %.6f\nc3 = %.6f\nc4 = %.6f\nc5 = %.6f\n', c);
+    fprintf('\nEquation: z = %.6f + %.6f*x + %.6f*y + %.6f*x^2 + %.6f*x*y + %.6f*y^2\n', c);
+else
+    fprintf('\nCoefficients (rev):\n');
+    fprintf('c0 = %.6f\nc1 = %.6f\n', c);
+    fprintf('\nEquation: z = %.6f + %.6f*(x^2+y^2)\n', c);
+end
+end
+
+%% ===== 유틸 =====
+function e=unit(v)
+n=norm(v); if n==0, e=[0;0;0]; else, e=v/n; end
+end
+
