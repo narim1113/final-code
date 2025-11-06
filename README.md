@@ -1,2 +1,2 @@
 # final-code
-3차원 플래셔 전개 구조 기반 파라볼로이드 곡면 근사 및 최적 설계
+3D Flasher Paraboloid
